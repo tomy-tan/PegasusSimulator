@@ -13,7 +13,15 @@ from isaacsim import SimulationApp
 # Start Isaac Sim's simulation environment
 # Note: this simulation app must be instantiated right after the SimulationApp import, otherwise the simulator will crash
 # as this is the object that will load all the extensions and load the actual simulator.
-simulation_app = SimulationApp({"headless": False})
+simulation_app = SimulationApp({
+    "headless": False,
+    "extra_args": [
+        "--/app/runLoops/main/rateLimitEnabled=true",
+        "--/app/runLoops/main/rateLimitFrequency=60",
+        "--/app/runLoops/main/manualModeEnabled=true",
+        "--/app/player/useFixedTimeStepping=true",
+    ],
+})
 
 # -----------------------------------
 # The actual script should start here
@@ -27,6 +35,8 @@ from pegasus.simulator.logic.state import State
 from pegasus.simulator.logic.backends.px4_mavlink_backend import PX4MavlinkBackend, PX4MavlinkBackendConfig
 from pegasus.simulator.logic.vehicles.multirotor import Multirotor, MultirotorConfig
 from pegasus.simulator.logic.interface.pegasus_interface import PegasusInterface
+from pegasus.simulator.logic.dynamics.wind_drag import WindDrag
+
 # Auxiliary scipy and numpy modules
 import os.path
 from scipy.spatial.transform import Rotation
@@ -61,12 +71,15 @@ class PegasusApp:
         # Create the multirotor configuration
         mavlink_config = PX4MavlinkBackendConfig({
             "vehicle_id": 0,
-            "px4_autolaunch": True,
+            "px4_autolaunch": False,
             "px4_dir": self.pg.px4_path,
             "px4_vehicle_model": self.pg.px4_default_airframe # CHANGE this line to 'iris' if using PX4 version bellow v1.14
         })
         config_multirotor.backends = [PX4MavlinkBackend(mavlink_config)]
-
+        #config_multirotor.drag = WindDrag([0.50, 0.30, 0.0])
+        # Drag: Forward/Back, Left/Right, Up/Down , Wind: East North Up
+        config_multirotor.drag = WindDrag(drag_coefficients=[0.50, 0.30, 0.0], wind_velocity=[-5.0, 0.0, 0.0])
+        
         Multirotor(
             "/World/quadrotor",
             ROBOTS['Pegasus'],
