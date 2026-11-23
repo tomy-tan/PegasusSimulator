@@ -78,7 +78,9 @@ class PegasusApp:
         config_multirotor.backends = [PX4MavlinkBackend(mavlink_config)]
         #config_multirotor.drag = WindDrag([0.50, 0.30, 0.0])
         # Drag: Forward/Back, Left/Right, Up/Down , Wind: East North Up
-        config_multirotor.drag = WindDrag(drag_coefficients=[0.50, 0.30, 0.0], wind_velocity=[-5.0, 0.0, 0.0])
+        config_multirotor.drag = WindDrag(drag_coefficients=[0.50, 0.30, 0.0], steady_wind=[-5.0, 0.0, 0.0],
+                                          gust_start=30.0, gust_duration=3.0, gust_peak=3.0,
+                                          gust_direction=[-1.0, 0.0, 0.0])
         
         Multirotor(
             "/World/quadrotor",
