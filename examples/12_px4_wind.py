@@ -36,6 +36,10 @@ from pegasus.simulator.logic.backends.px4_mavlink_backend import PX4MavlinkBacke
 from pegasus.simulator.logic.vehicles.multirotor import Multirotor, MultirotorConfig
 from pegasus.simulator.logic.interface.pegasus_interface import PegasusInterface
 from pegasus.simulator.logic.dynamics.wind_drag import WindDrag
+from pegasus.simulator.logic.graphical_sensors.monocular_camera import MonocularCamera
+from omni.kit.viewport.utility import get_active_viewport_window
+from omni.kit.widget.viewport import ViewportWidget
+import omni.ui as ui
 
 def dryden_low_altitude(w20, h_ft):
     """Turbulence settings from the MIL-F-8785C low-altitude formulas.
@@ -94,7 +98,7 @@ class PegasusApp:
         config_multirotor.backends = [PX4MavlinkBackend(mavlink_config)]
         #config_multirotor.drag = WindDrag([0.50, 0.30, 0.0])
 
-        W20 = 15.43    # m/s: light 7.72, moderate 15.43, severe 23.15
+        W20 = 5.0    # m/s: light 7.72, moderate 15.43, severe 23.15
         turb_sigma, turb_tau = dryden_low_altitude(W20, h_ft=8.2)
         print("TURBCHECK", turb_sigma, turb_tau)   # temporary: remove after checking
         # Drag: Forward/Back, Left/Right, Up/Down , Wind: East North Up
@@ -102,6 +106,13 @@ class PegasusApp:
                                           gust_start=30.0, gust_duration=3.0, gust_peak=0.0,
                                           gust_direction=[-1.0, 0.0, 0.0], turb_sigma=turb_sigma, 
                                           turb_tau=turb_tau, turb_seed=1)
+
+        # Create camera object
+        # "camera/" puts the sensor inside the RealSense model, so it moves with it
+        config_multirotor.graphical_sensors = [
+            MonocularCamera("camera/drone_camera", config={"frequency": 30, "depth": False, "resolution": (1280, 720),
+                                                    "position": [0.148, 0.0, -0.028]})
+        ]
         
         Multirotor(
             "/World/quadrotor",
@@ -112,11 +123,33 @@ class PegasusApp:
             config=config_multirotor,
         )
 
+        
+        
         # Reset the simulation environment so that all articulations (aka robots) are initialized
         self.world.reset()
 
         # Auxiliar variable for the timeline callback example
         self.stop_sim = False
+
+        # Picture-in-picture: the drone camera drawn inside the main viewport.
+        # Drag it by its title bar to move it.
+        # "camera/" puts the sensor inside the RealSense model, so it moves with it
+        pip_w, pip_h = 240, 135      # picture size in pixels (16:9)
+        bar_h = 16                   # height of the title bar above the picture
+        main_window = get_active_viewport_window()
+        start_x = max(0, main_window.width - pip_w - 20)          # start near the bottom-right corner
+        start_y = max(0, main_window.height - pip_h - bar_h - 60)
+        self.pip_frame = main_window.get_frame("drone_camera_pip")
+        with self.pip_frame:
+            self.pip_placer = ui.Placer(draggable=True, drag_axis=ui.Axis.XY,
+                                        offset_x=start_x, offset_y=start_y)
+            with self.pip_placer:
+                with ui.VStack(width=pip_w, height=pip_h + bar_h):
+                    with ui.ZStack(height=bar_h):
+                        ui.Rectangle(style={"background_color": 0xFF303030})
+                        ui.Label("  Drone camera", style={"font_size": 12, "color": 0xFFDDDDDD})
+                    self.pip_view = ViewportWidget(camera_path="/World/quadrotor/body/camera/drone_camera",
+                                                   resolution=(pip_w, pip_h), width=pip_w, height=pip_h)
 
     def run(self):
         """
