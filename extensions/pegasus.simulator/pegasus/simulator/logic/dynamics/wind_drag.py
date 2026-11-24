@@ -63,6 +63,8 @@ class WindDrag(Drag):
             from isaacsim.util.debug_draw import _debug_draw
             self._draw = _debug_draw.acquire_debug_draw_interface()
         self._arrow_timer = 0.0
+
+        self._wind_on = True
         
     @property # getter
     def drag(self):
@@ -102,6 +104,13 @@ class WindDrag(Drag):
                 self._show_arrow = show
                 if not show:
                     self._draw.clear_lines()    # remove the last arrow from the screen
+
+        enable_attr = self._wind_prim.GetAttribute("wind:enabled")
+        if enable_attr.IsValid():
+            enabled = enable_attr.Get()
+            if enabled != self._wind_on:
+                self._wind_on = enabled
+                print(f"t: {self._time:.2f} s  WIND {'ON' if enabled else 'OFF'}")
         
     def update(self, state: State, dt: float):
         self._read_timer += dt
@@ -123,6 +132,9 @@ class WindDrag(Drag):
 
         wind = self._steady_wind + gust_speed * self._gust_direction + self._turb
 
+        if not self._wind_on:
+            wind = np.zeros(3)    # wind switched off: drag comes from the drone's own motion only
+        
         # Update wind arrow
         self._arrow_timer += dt
         if self._draw is not None and self._show_arrow and self._arrow_timer >= 0.1:

@@ -72,12 +72,14 @@ class PegasusApp:
 
 
         # Wind settings object, editable in the Property panel while the simulation runs
-        wind_prim = self.world.stage.DefinePrim("/World/Wind", "Xform")
+        wind_prim = self.world.stage.DefinePrim("/World/Wind", "Xform") # "Xform" is a container with a position but no shape
+        wind_prim.CreateAttribute("wind:enabled", Sdf.ValueTypeNames.Bool).Set(True)   # untick to switch all wind off
         wind_prim.CreateAttribute("wind:speed", Sdf.ValueTypeNames.Float).Set(5.0)        # m/s
         wind_prim.CreateAttribute("wind:from_deg", Sdf.ValueTypeNames.Float).Set(90.0)    # compass direction the wind comes from
         wind_prim.CreateAttribute("wind:turbulence", Sdf.ValueTypeNames.Bool).Set(False)  # tick to turn turbulence on
         wind_prim.CreateAttribute("wind:gust_now", Sdf.ValueTypeNames.Bool).Set(False)    # tick to fire a gust
         wind_prim.CreateAttribute("wind:show_arrow", Sdf.ValueTypeNames.Bool).Set(False)   # tick to show the wind arrow
+        
 
         # Create the vehicle
         # Try to spawn the selected robot in the world to the specified namespace
@@ -117,8 +119,6 @@ class PegasusApp:
             config=config_multirotor,
         )
 
-        
-        
         # Reset the simulation environment so that all articulations (aka robots) are initialized
         self.world.reset()
 
