@@ -35,27 +35,12 @@ from pegasus.simulator.logic.state import State
 from pegasus.simulator.logic.backends.px4_mavlink_backend import PX4MavlinkBackend, PX4MavlinkBackendConfig
 from pegasus.simulator.logic.vehicles.multirotor import Multirotor, MultirotorConfig
 from pegasus.simulator.logic.interface.pegasus_interface import PegasusInterface
-from pegasus.simulator.logic.dynamics.wind_drag import WindDrag
+from pegasus.simulator.logic.dynamics.wind_drag import WindDrag, dryden_low_altitude
 from pegasus.simulator.logic.graphical_sensors.monocular_camera import MonocularCamera
 from omni.kit.viewport.utility import get_active_viewport_window
 from omni.kit.widget.viewport import ViewportWidget
 import omni.ui as ui
-
-def dryden_low_altitude(w20, h_ft):
-    """Turbulence settings from the MIL-F-8785C low-altitude formulas.
-
-    w20: wind speed 20 ft above ground (m/s), also used as the steady wind speed
-    h_ft: hover height above ground (ft)
-    Returns (turb_sigma, turb_tau), one value each for east-west, north-south, up.
-    """
-    if w20 <= 0.0:
-        return [0.0, 0.0, 0.0], [1.0, 1.0, 1.0]   # no wind, no turbulence
-    k = 0.177 + 0.000823 * h_ft
-    sigma_w = 0.1 * w20
-    sigma_uv = sigma_w / k**0.4
-    L_w = h_ft * 0.3048
-    L_uv = h_ft / k**1.2 * 0.3048
-    return [sigma_uv, sigma_uv, sigma_w], [L_uv / w20, L_uv / w20, L_w / w20]
+from pxr import Sdf
 
 # Auxiliary scipy and numpy modules
 import os.path
@@ -85,6 +70,15 @@ class PegasusApp:
         # Launch one of the worlds provided by NVIDIA
         self.pg.load_environment(SIMULATION_ENVIRONMENTS["Box Room"])
 
+
+        # Wind settings object, editable in the Property panel while the simulation runs
+        wind_prim = self.world.stage.DefinePrim("/World/Wind", "Xform")
+        wind_prim.CreateAttribute("wind:speed", Sdf.ValueTypeNames.Float).Set(5.0)        # m/s
+        wind_prim.CreateAttribute("wind:from_deg", Sdf.ValueTypeNames.Float).Set(90.0)    # compass direction the wind comes from
+        wind_prim.CreateAttribute("wind:turbulence", Sdf.ValueTypeNames.Bool).Set(False)  # tick to turn turbulence on
+        wind_prim.CreateAttribute("wind:gust_now", Sdf.ValueTypeNames.Bool).Set(False)    # tick to fire a gust
+        wind_prim.CreateAttribute("wind:show_arrow", Sdf.ValueTypeNames.Bool).Set(False)   # tick to show the wind arrow
+
         # Create the vehicle
         # Try to spawn the selected robot in the world to the specified namespace
         config_multirotor = MultirotorConfig()
@@ -105,7 +99,7 @@ class PegasusApp:
         config_multirotor.drag = WindDrag(drag_coefficients=[0.50, 0.30, 0.0], steady_wind=[-W20, 0.0, 0.0],
                                           gust_start=30.0, gust_duration=3.0, gust_peak=0.0,
                                           gust_direction=[-1.0, 0.0, 0.0], turb_sigma=turb_sigma, 
-                                          turb_tau=turb_tau, turb_seed=1)
+                                          turb_tau=turb_tau, turb_seed=1, wind_prim_path="/World/Wind", show_arrow=True)
 
         # Create camera object
         # "camera/" puts the sensor inside the RealSense model, so it moves with it
