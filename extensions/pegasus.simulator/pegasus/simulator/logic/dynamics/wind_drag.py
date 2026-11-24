@@ -5,7 +5,9 @@ from scipy.spatial.transform import Rotation
 
 class WindDrag(Drag):
     def __init__(self, drag_coefficients=[0.0, 0.0, 0.0], steady_wind=[0.0, 0.0, 0.0],
-                 gust_start = 0.0, gust_duration = 1.0, gust_peak = 0.0, gust_direction = [0.0, 0.0, 0.0]):
+                 gust_start = 0.0, gust_duration = 1.0, gust_peak = 0.0, gust_direction = [0.0, 0.0, 0.0],
+                 turb_sigma=[0.0, 0.0, 0.0], turb_tau=[1.0, 1.0, 1.0], turb_seed=0):
+        
         super().__init__()
     
         self._drag_coefficients = np.diag(drag_coefficients)
@@ -16,12 +18,18 @@ class WindDrag(Drag):
 
         self._print_timer = 0.0
 
+        # Gust
         self._gust_start = gust_start
         self._gust_duration = gust_duration
         self._gust_peak = gust_peak
         self._gust_direction = np.array(gust_direction)
         self._time = 0.0
 
+        self._turb_sigma = np.array(turb_sigma)
+        self._turb_tau = np.array(turb_tau)
+        self._rng = np.random.default_rng(turb_seed)
+        self._turb = np.zeros(3)
+        
     @property # getter
     def drag(self):
 
@@ -34,8 +42,13 @@ class WindDrag(Drag):
             gust_speed = ((1-np.cos((2 * np.pi) * ((self._time - self._gust_start) / self._gust_duration))) / 2) * self._gust_peak
         else:
             gust_speed = 0.0
-        
-        wind = self._steady_wind + gust_speed * self._gust_direction
+
+         # Turbulence: filtered noise, one value per world axis (east, north, up)
+        a = np.exp(-dt / self._turb_tau)
+        b = self._turb_sigma * np.sqrt(1 - a**2)
+        self._turb = a * self._turb + b * self._rng.standard_normal(3)
+
+        wind = self._steady_wind + gust_speed * self._gust_direction + self._turb
         
         # Drone's velocity relative to the ground, in the drone's axes (forward, left, up)
         body_vel = state.linear_body_velocity 

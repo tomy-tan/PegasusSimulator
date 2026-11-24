@@ -37,6 +37,22 @@ from pegasus.simulator.logic.vehicles.multirotor import Multirotor, MultirotorCo
 from pegasus.simulator.logic.interface.pegasus_interface import PegasusInterface
 from pegasus.simulator.logic.dynamics.wind_drag import WindDrag
 
+def dryden_low_altitude(w20, h_ft):
+    """Turbulence settings from the MIL-F-8785C low-altitude formulas.
+
+    w20: wind speed 20 ft above ground (m/s), also used as the steady wind speed
+    h_ft: hover height above ground (ft)
+    Returns (turb_sigma, turb_tau), one value each for east-west, north-south, up.
+    """
+    if w20 <= 0.0:
+        return [0.0, 0.0, 0.0], [1.0, 1.0, 1.0]   # no wind, no turbulence
+    k = 0.177 + 0.000823 * h_ft
+    sigma_w = 0.1 * w20
+    sigma_uv = sigma_w / k**0.4
+    L_w = h_ft * 0.3048
+    L_uv = h_ft / k**1.2 * 0.3048
+    return [sigma_uv, sigma_uv, sigma_w], [L_uv / w20, L_uv / w20, L_w / w20]
+
 # Auxiliary scipy and numpy modules
 import os.path
 from scipy.spatial.transform import Rotation
@@ -77,10 +93,15 @@ class PegasusApp:
         })
         config_multirotor.backends = [PX4MavlinkBackend(mavlink_config)]
         #config_multirotor.drag = WindDrag([0.50, 0.30, 0.0])
+
+        W20 = 15.43    # m/s: light 7.72, moderate 15.43, severe 23.15
+        turb_sigma, turb_tau = dryden_low_altitude(W20, h_ft=8.2)
+        print("TURBCHECK", turb_sigma, turb_tau)   # temporary: remove after checking
         # Drag: Forward/Back, Left/Right, Up/Down , Wind: East North Up
-        config_multirotor.drag = WindDrag(drag_coefficients=[0.50, 0.30, 0.0], steady_wind=[-5.0, 0.0, 0.0],
-                                          gust_start=30.0, gust_duration=3.0, gust_peak=3.0,
-                                          gust_direction=[-1.0, 0.0, 0.0])
+        config_multirotor.drag = WindDrag(drag_coefficients=[0.50, 0.30, 0.0], steady_wind=[-W20, 0.0, 0.0],
+                                          gust_start=30.0, gust_duration=3.0, gust_peak=0.0,
+                                          gust_direction=[-1.0, 0.0, 0.0], turb_sigma=turb_sigma, 
+                                          turb_tau=turb_tau, turb_seed=1)
         
         Multirotor(
             "/World/quadrotor",
