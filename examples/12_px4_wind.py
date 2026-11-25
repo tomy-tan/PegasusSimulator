@@ -41,10 +41,14 @@ from omni.kit.viewport.utility import get_active_viewport_window
 from omni.kit.widget.viewport import ViewportWidget
 import omni.ui as ui
 from pxr import Sdf
+import cv2
+from pegasus.simulator.logic.backends.video_recorder_backend import VideoRecorderBackend
 
 # Auxiliary scipy and numpy modules
 import os.path
 from scipy.spatial.transform import Rotation
+
+RECORD_VIDEO = False
 
 class PegasusApp:
     """
@@ -91,7 +95,17 @@ class PegasusApp:
             "px4_dir": self.pg.px4_path,
             "px4_vehicle_model": self.pg.px4_default_airframe # CHANGE this line to 'iris' if using PX4 version bellow v1.14
         })
-        config_multirotor.backends = [PX4MavlinkBackend(mavlink_config)]
+        # PX4 must come first: the first backend drives the motors
+        backends = [PX4MavlinkBackend(mavlink_config)]
+
+        # Optional video recorder for the drone camera (None = not recording)
+        self.recorder = None
+        if RECORD_VIDEO:
+            self.recorder = VideoRecorderBackend()
+            backends.append(self.recorder)
+
+        config_multirotor.backends = backends
+
         #config_multirotor.drag = WindDrag([0.50, 0.30, 0.0])
 
         W20 = 5.0    # m/s: light 7.72, moderate 15.43, severe 23.15
@@ -103,12 +117,11 @@ class PegasusApp:
                                           gust_direction=[-1.0, 0.0, 0.0], turb_sigma=turb_sigma, 
                                           turb_tau=turb_tau, turb_seed=1, wind_prim_path="/World/Wind", show_arrow=True)
 
-        # Create camera object
-        # "camera/" puts the sensor inside the RealSense model, so it moves with it
-        config_multirotor.graphical_sensors = [
-            MonocularCamera("camera/drone_camera", config={"frequency": 30, "depth": False, "resolution": (1280, 720),
-                                                    "position": [0.148, 0.0, -0.028]})
-        ]
+        # Drone camera. "camera/" puts the sensor inside the RealSense model, so it moves with it.
+        # Kept on self so run() can read its frames.
+        self.drone_camera = MonocularCamera("camera/drone_camera", config={"frequency": 30, "depth": False, "resolution": (1280, 720),
+                                                                           "position": [0.148, 0.0, -0.028]})
+        config_multirotor.graphical_sensors = [self.drone_camera]
         
         Multirotor(
             "/World/quadrotor",
@@ -124,6 +137,8 @@ class PegasusApp:
 
         # Auxiliar variable for the timeline callback example
         self.stop_sim = False
+
+        self.got_frame = False
 
         # Picture-in-picture: the drone camera drawn inside the main viewport.
         # Drag it by its title bar to move it.
@@ -158,8 +173,22 @@ class PegasusApp:
 
             # Update the UI of the app and perform the physics step
             self.world.step(render=True)
+
+            if not self.got_frame:
+                cam = self.drone_camera.state.get("camera")
+                if cam is not None:
+                    frame = cam.get_rgb() # ask cam for an RGB frame
+                    if frame is not None:    # None until the first picture is rendered
+                        print(f"frame shape: {frame.shape}, dtype: {frame.dtype}")
+                        final_frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
+                        if not cv2.imwrite(os.path.expanduser("~/sim-tools/recordings/frame.png"), final_frame):
+                            print("Failed to save frame.")
+                        self.got_frame = True
+
         
         # Cleanup and stop
+        if self.recorder is not None:
+            self.recorder.stop()    # finish the video; closing the window may shut down before Pegasus calls stop()
         carb.log_warn("PegasusApp Simulation App is closing.")
         self.timeline.stop()
         simulation_app.close()
