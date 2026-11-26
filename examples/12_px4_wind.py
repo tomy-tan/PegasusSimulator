@@ -28,6 +28,9 @@ simulation_app = SimulationApp({
 # -----------------------------------
 import omni.timeline
 from omni.isaac.core.world import World
+# Start a fresh stage so the people extension is ready (as in Pegasus's 9_people.py)
+import omni.usd
+omni.usd.get_context().new_stage()
 
 # Import the Pegasus API for simulating drones
 from pegasus.simulator.params import ROBOTS, SIMULATION_ENVIRONMENTS
@@ -43,12 +46,20 @@ import omni.ui as ui
 from pxr import Sdf
 import cv2
 from pegasus.simulator.logic.backends.video_recorder_backend import VideoRecorderBackend
+from pegasus.simulator.logic.backends.video_stream_backend import VideoStreamBackend
 
 # Auxiliary scipy and numpy modules
 import os.path
 from scipy.spatial.transform import Rotation
 
+import numpy as np
+from isaacsim.core.api.objects import VisualCuboid
+from pegasus.simulator.logic.people.person import Person
+
 RECORD_VIDEO = False
+# Stream the drone camera live to the Radxa's RTSP server (check the board's IP with hostname -I)
+STREAM_VIDEO = True
+STREAM_URL = "rtsp://172.16.30.155:8554/sim"
 
 class PegasusApp:
     """
@@ -74,6 +85,17 @@ class PegasusApp:
         # Launch one of the worlds provided by NVIDIA
         self.pg.load_environment(SIMULATION_ENVIRONMENTS["Box Room"])
 
+        # Test wall for the CV model: 6 m in front of the drone (it starts at the origin facing +x, east),
+        # 4 m wide and 3 m tall, with a 1.2 x 1.2 m window opening from 1.0 to 2.2 m high.
+        # The cubes are 1 m by default, so scale = size in metres. VisualCuboid has no collision.
+        wall_colour = np.array([0.80, 0.78, 0.72])
+        VisualCuboid("/World/TestWall/North", position=[6.0,  1.3, 1.5], scale=[0.2, 1.4, 3.0], color=wall_colour)
+        VisualCuboid("/World/TestWall/South", position=[6.0, -1.3, 1.5], scale=[0.2, 1.4, 3.0], color=wall_colour)
+        VisualCuboid("/World/TestWall/Below", position=[6.0,  0.0, 0.5], scale=[0.2, 1.2, 1.0], color=wall_colour)
+        VisualCuboid("/World/TestWall/Above", position=[6.0,  0.0, 2.6], scale=[0.2, 1.2, 0.8], color=wall_colour)
+
+        # A person 0.5 m behind the window, turned to face it (yaw in radians: pi = facing -x, towards the drone)
+        Person("window_person", "original_female_adult_business_02", init_pos=[6.6, 0.0, 0.0], init_yaw=np.pi)
 
         # Wind settings object, editable in the Property panel while the simulation runs
         wind_prim = self.world.stage.DefinePrim("/World/Wind", "Xform") # "Xform" is a container with a position but no shape
@@ -103,6 +125,12 @@ class PegasusApp:
         if RECORD_VIDEO:
             self.recorder = VideoRecorderBackend()
             backends.append(self.recorder)
+
+        # Optional live stream of the drone camera (None = not streaming)
+        self.streamer = None
+        if STREAM_VIDEO:
+            self.streamer = VideoStreamBackend(url=STREAM_URL)
+            backends.append(self.streamer)
 
         config_multirotor.backends = backends
 
@@ -189,6 +217,8 @@ class PegasusApp:
         # Cleanup and stop
         if self.recorder is not None:
             self.recorder.stop()    # finish the video; closing the window may shut down before Pegasus calls stop()
+        if self.streamer is not None:
+            self.streamer.stop()
         carb.log_warn("PegasusApp Simulation App is closing.")
         self.timeline.stop()
         simulation_app.close()
